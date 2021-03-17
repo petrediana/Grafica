@@ -1,0 +1,172 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title>Harta</title>
+</head>
+<body>
+
+    <canvas width="800" height="500" style="border: 1px solid black;"></canvas>
+    <script type="text/javascript" src="transformari.js"></script>
+
+    <script type="text/javascript">
+        "option strict";
+
+        const canvas = document.querySelector("canvas");
+        const context = canvas.getContext('2d');
+
+        // Lista de obiecte oras {denumire, long, lat}
+        let orase = [];
+
+        // Lista de puncte pentru frontiera; fiecare punct
+        // este de forma [long, lat]
+        let frontiera = [];
+
+        // Coordonate vizor (in coordonate ecran)
+        let vl = 0, vr = 0, vb = 0, vt = 0;
+
+        // Transformarea curenta:
+        //
+        // - dupa functia de procesare va contine transformarea
+        //   de vizualizare (conversia din coordonate
+        //   reale - latitudine si longitudine - in coordonate ecran)
+        //
+        // - la fiecare comanda utilizator este compusa cu operatia
+        //   solicitata (Exemplu: la sageata dreapta este compusa cu o
+        //   tranformare transfTranslatie(5, 0))
+        let transformare = transfIdentica();
+
+        fetch('harta.json')
+            .then(response => response.json())
+            .then(date => {
+                frontiera = date.frontiera;
+                orase = date.orase;
+
+                procesare();
+            });
+
+        function procesare() {
+
+            // 1. Determinare fereastra - coordonate reale
+            const coordonateX = orase.map(oras => oras.long)
+                .concat(frontiera.map(f => f[0]));
+            const coordonateY = orase.map(oras => oras.lat)
+                .concat(frontiera.map(f => f[1]));
+
+            let wl = Math.min(...coordonateX),
+                wr = Math.max(...coordonateX),
+                wb = Math.min(...coordonateY),
+                wt = Math.max(...coordonateY);
+
+            console.log("Coordonate fereastra", wl, wr, wb, wt);
+
+            // 2. Determinare vizor - coordonate ecran
+            vl = 30;
+            vr = canvas.width - 30;
+            vb = 20;
+            vt = (wt - wb) * (vr - vl) / (wr - wl) - vb;
+            console.log("Coordonate vizor", vl, vr, vb, vt);
+
+            // 3. Calcul matrice de transformare initiala
+            let ax = (vr - vl) / (wr - wl),
+                bx = (vl * (wr - wl) - wl * (vr - vl)) / (wr - wl);
+            let ay = (vt - vb) / (wt - wb),
+                by = (vb * (wt - wb) - wb * (vt - vb)) / (wt - wb);
+            console.log("ax = ", ax, "bx = ", bx);
+            console.log("ay = ", ay, "by = ", by);
+
+            transformare = compunere(
+                transfScalare(ax, ay),
+                transfTranslatie(bx, by),
+                transfSimetrieX(),
+                transfTranslatie(0, vb + vt));
+            console.log("Transformarea initiala", transformare);
+
+            desenare();
+        }
+
+        function desenare() {
+            // 4. Desenare orase
+            context.fillStyle = 'white';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            context.fillStyle = 'yellow';
+            context.fillRect(vl, vb, vr - vl, vt - vb);
+
+            context.fillStyle = 'black';
+            for (let oras of orase) {
+                let { x, y } = aplica(transformare, oras.long, oras.lat);
+
+                context.fillRect(x, y, 3, 3);
+                context.fillText(oras.denumire, x, y);
+            }
+
+            context.beginPath();
+            for (let f of frontiera) {
+                let { x, y } = aplica(transformare, f[0], f[1]);
+                context.lineTo(x, y);
+            }
+            context.stroke();
+        }
+
+        // Calculeaza centrul dreptunghiului care incadreaza
+        // figura desenata in coordonate ecran (pentru rotiri)
+        function obtineCentru() {
+
+            let coordonateX = orase.map(oras => aplica(transformare, oras.long, oras.lat).x)
+                .concat(frontiera.map(f => aplica(transformare, f[0], f[1]).x));
+
+            let coordonateY = orase.map(oras => aplica(transformare, oras.long, oras.lat).y)
+                .concat(frontiera.map(f => aplica(transformare, f[0], f[1]).y));;
+
+            return {
+                x: (Math.max(...coordonateX) + Math.min(...coordonateX)) / 2,
+                y: (Math.max(...coordonateY) + Math.min(...coordonateY)) / 2
+            };
+        }
+
+        document.addEventListener("keydown", e => {
+
+            const keyLeft = 37;
+            const keyRight = 39;
+            const keyDown = 40;
+            const keyUp = 38;
+
+            if (e.shiftKey) {
+                if (e.keyCode == keyRight) {
+                    let { x, y } = obtineCentru();
+                    transformare = compunere(
+                        transformare,
+                        transfRotatiePunct(x, y, Math.PI / 100)
+                    );
+                } else if (e.keyCode == keyLeft) {
+                    let { x, y } = obtineCentru();
+                    transformare = compunere(
+                        transformare,
+                        transfRotatiePunct(x, y, -Math.PI / 100)
+                    );
+                }
+                if (e.keyCode == keyDown) {
+                    transformare = compunere(transformare, transfScalare(0.95, 0.95));
+                } else if (e.keyCode == keyUp) {
+                    transformare = compunere(transformare, transfScalare(1.05, 1.05));
+                }
+            } else {
+                if (e.keyCode == keyLeft) {
+                    transformare = compunere(transformare, transfTranslatie(-5, 0));
+                } else if (e.keyCode == keyRight) {
+                    transformare = compunere(transformare, transfTranslatie(5, 0));
+                }
+                if (e.keyCode == keyDown) {
+                    transformare = compunere(transformare, transfTranslatie(0, 5));
+                } else if (e.keyCode == keyUp) {
+                    transformare = compunere(transformare, transfTranslatie(0, -5));
+                }
+            }
+            desenare();
+        });
+    </script>
+    <script type="text/javascript" src="determinareOras.js"></script>
+</body>
+</html>
