@@ -1,0 +1,111 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title>Reprezentare 3D</title>
+</head>
+<body>
+    <canvas width="800" height="450" style="border: 1px solid black;"></canvas>
+
+    <script type="text/javascript" src="transformari3D.js"></script>
+
+    <script type="text/javascript">
+        "option strict";
+
+        const canvas = document.querySelector("canvas");
+        const context = canvas.getContext('2d');
+
+        // va contine lista de obiecte de afisat
+        let scena = [];
+
+        let theta = 43 / 180 * Math.PI;
+        let phi = 49 / 180 * Math.PI;;
+        let R = 1200, d = 1000, sx = 20, sy = 20;
+        let T = calculMatriceTransformare();
+
+        fetch('birou.json')
+            .then(response => response.json())
+            .then(date => {
+                scena = date;
+                desenare();
+            });
+
+        function desenare() {
+
+            context.fillStyle = 'white';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            context.fillStyle = 'hsla(220, 100%, 50%, 0.3)';
+
+            for (let obiect of scena) {
+                for (let suprafata of obiect.suprafete) {
+                    context.beginPath();
+                    for (let indexPunct of suprafata) {
+                        let punct3D = obiect.puncte[indexPunct];
+
+                        // Transformarea din sistemul de coordonate
+                        // obiect in sistemul de coordonate observator
+                        let { x: xo, y: yo, z: zo } =
+                            aplica3D(T, punct3D.x, punct3D.y, punct3D.z);
+
+                        // Aplicarea proiectiei
+                        const xp = d * xo / zo;
+                        const yp = d * yo / zo;
+
+                        // Aplicam scalarea si translatia
+                        // (originea sistemului de coordonate
+                        // este translatata in centrul canvas-ului)
+                        context.lineTo(
+                            xp * sx + canvas.width / 2,
+                            yp * sy + canvas.height / 2);
+
+                    }
+                    context.closePath();
+                    context.fill();
+                    context.stroke();
+                }
+            }
+
+            //theta = theta + Math.PI / 100;
+            //phi = phi + Math.PI / 100;
+            T = calculMatriceTransformare();
+            for (let i = 0; i < 5; i++) {
+                aplicaTransformareObiect(
+                    compunere3D(
+                        tTranslatie3D(0.01, 0, 0),
+                        tRotatieX3D(Math.PI / 100)),
+                    scena[i]);
+            }
+            requestAnimationFrame(desenare);
+        }
+
+        function calculMatriceTransformare() {
+
+            let A = inversa3D(tTranslatie3D(
+                R * Math.cos(theta) * Math.cos(phi),
+                R * Math.sin(theta) * Math.cos(phi),
+                R * Math.sin(phi)));
+
+            let B = inversa3D(tRotatieZ3D(-(Math.PI / 2 - theta)));
+
+            let C = inversa3D(tRotatieX3D(Math.PI / 2 + phi));
+
+            let D = inversa3D(tSimetrieZ3D());
+
+            return compunere3D(A, B, C, D);
+        }
+
+
+        function aplicaTransformareObiect(transformare, obiect) {
+            for (let i = 0; i < obiect.puncte.length; i++) {
+                obiect.puncte[i] = aplica3D(transformare,
+                    obiect.puncte[i].x,
+                    obiect.puncte[i].y,
+                    obiect.puncte[i].z);                
+            }
+        }
+
+    </script>
+</body>
+</html>
